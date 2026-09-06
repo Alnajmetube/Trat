@@ -1,0 +1,367 @@
+name: Build Termux ARM64
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ARM64 Binary
+    runs-on: ubuntu-latest
+
+    steps:
+      # ==========================================
+      # Checkout
+      # ==========================================
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # QEMU
+      # ==========================================
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # ==========================================
+      # Build
+      # ==========================================
+      - name: Build Termux ARM64
+        shell: bash
+        env:
+          BUILD_TOKEN: ${{ secrets.TOKEN }}
+          BUILD_CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Preparing build directory"
+          echo "========================================"
+
+          mkdir -p "$GITHUB_WORKSPACE/build"
+
+          chmod -R 777 "$GITHUB_WORKSPACE"
+
+          echo "========================================"
+          echo "Starting ARM64 Termux container"
+          echo "========================================"
+
+          docker run --rm \
+            --platform linux/arm64 \
+            -e BUILD_TOKEN="$BUILD_TOKEN" \
+            -e BUILD_CHAT_ID="$BUILD_CHAT_ID" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            termux/termux-docker:aarch64 \
+            bash -c '
+
+              set -euo pipefail
+
+              echo "========================================"
+              echo "Termux ARM64 Environment"
+              echo "========================================"
+
+              echo "Architecture:"
+              uname -m
+
+              if [ "$(uname -m)" != "aarch64" ]; then
+                echo "ERROR: ARM64 environment was not detected."
+                exit 1
+              fi
+
+              # ==========================================
+              # Validate secrets
+              # ==========================================
+
+              echo "========================================"
+              echo "Checking build configuration"
+              echo "========================================"
+
+              if [ -z "${BUILD_TOKEN:-}" ]; then
+                echo "ERROR: TOKEN secret is missing."
+                exit 1
+              fi
+
+              if [ -z "${BUILD_CHAT_ID:-}" ]; then
+                echo "ERROR: CHAT_ID secret is missing."
+                exit 1
+              fi
+
+              echo "Build configuration is available."
+
+              # ==========================================
+              # Update packages
+              # ==========================================
+
+              echo "========================================"
+              echo "Updating Termux packages"
+              echo "========================================"
+
+              pkg update -y
+              pkg upgrade -y
+
+              # ==========================================
+              # Install dependencies
+              # ==========================================
+
+              echo "========================================"
+              echo "Installing build dependencies"
+              echo "========================================"
+
+              pkg install -y \
+                python \
+                clang \
+                make \
+                binutils \
+                patchelf \
+                ccache \
+                ldd \
+                termux-elf-cleaner \
+                zstd \
+                file
+
+              # ==========================================
+              # Python
+              # ==========================================
+
+              echo "========================================"
+              echo "Python information"
+              echo "========================================"
+
+              python --version
+              python -m pip --version
+
+              # ==========================================
+              # Prepare build directory
+              # ==========================================
+
+              echo "========================================"
+              echo "Preparing source"
+              echo "========================================"
+
+              BUILD_DIR="$HOME/build"
+              OUTPUT_DIR="$BUILD_DIR/output"
+
+              rm -rf "$BUILD_DIR"
+
+              mkdir -p "$BUILD_DIR"
+              mkdir -p "$OUTPUT_DIR"
+
+              cp -r /workspace/. "$BUILD_DIR/"
+
+              cd "$BUILD_DIR"
+
+              # ==========================================
+              # Install Python dependencies
+              # ==========================================
+
+              echo "========================================"
+              echo "Installing Python dependencies"
+              echo "========================================"
+
+              python -m pip install --upgrade pip
+
+              if [ -f requirements.txt ]; then
+                python -m pip install -r requirements.txt
+              else
+                echo "No requirements.txt found."
+              fi
+
+              # ==========================================
+              # Install Nuitka
+              # ==========================================
+
+              echo "========================================"
+              echo "Installing Nuitka"
+              echo "========================================"
+
+              python -m pip install --upgrade Nuitka
+
+              python -m nuitka --version
+
+              # ==========================================
+              # Validate source
+              # ==========================================
+
+              echo "========================================"
+              echo "Checking source"
+              echo "========================================"
+
+              if [ ! -f main.py ]; then
+                echo "ERROR: main.py was not found."
+                exit 1
+              fi
+
+              # ==========================================
+              # Inject secrets
+              # ==========================================
+
+              echo "========================================"
+              echo "Injecting build configuration"
+              echo "========================================"
+
+              python - <<'"'"'PY'"'"'
+              import os
+              from pathlib import Path
+
+              path = Path("main.py")
+
+              source = path.read_text(encoding="utf-8")
+
+              token = os.environ["BUILD_TOKEN"]
+              chat_id = os.environ["BUILD_CHAT_ID"]
+
+              if "__TOKEN__" not in source:
+                  raise SystemExit(
+                      "ERROR: __TOKEN__ placeholder was not found in main.py"
+                  )
+
+              if "__CHAT_ID__" not in source:
+                  raise SystemExit(
+                      "ERROR: __CHAT_ID__ placeholder was not found in main.py"
+                  )
+
+              source = source.replace("__TOKEN__", token)
+              source = source.replace("__CHAT_ID__", chat_id)
+
+              path.write_text(source, encoding="utf-8")
+
+              print("Build configuration injected successfully.")
+              PY
+
+              # ==========================================
+              # Build
+              # ==========================================
+
+              echo "========================================"
+              echo "Compiling with Nuitka"
+              echo "========================================"
+
+              python -m nuitka \
+                --mode=onefile \
+                --lto=yes \
+                --remove-output \
+                --output-dir="$OUTPUT_DIR" \
+                --output-filename=termux_remote_client_arm64 \
+                main.py
+
+              # ==========================================
+              # Verify binary
+              # ==========================================
+
+              echo "========================================"
+              echo "Verifying binary"
+              echo "========================================"
+
+              BINARY="$OUTPUT_DIR/termux_remote_client_arm64"
+
+              if [ ! -f "$BINARY" ]; then
+                echo "ERROR: Binary was not created."
+                ls -lah "$OUTPUT_DIR"
+                exit 1
+              fi
+
+              chmod +x "$BINARY"
+
+              # ==========================================
+              # Clean binary
+              # ==========================================
+
+              echo "========================================"
+              echo "Cleaning binary"
+              echo "========================================"
+
+              strip "$BINARY" || true
+
+              if command -v termux-elf-cleaner >/dev/null 2>&1; then
+                  termux-elf-cleaner "$BINARY" || true
+              fi
+
+              # ==========================================
+              # Final information
+              # ==========================================
+
+              echo "========================================"
+              echo "Final binary"
+              echo "========================================"
+
+              file "$BINARY"
+              ls -lh "$BINARY"
+
+              # ==========================================
+              # Export binary
+              # ==========================================
+
+              echo "========================================"
+              echo "Exporting binary"
+              echo "========================================"
+
+              cp "$BINARY" /workspace/build/termux_remote_client_arm64
+
+              chmod +x /workspace/build/termux_remote_client_arm64
+
+              echo "========================================"
+              echo "BUILD SUCCESSFUL"
+              echo "========================================"
+            '
+
+      # ==========================================
+      # Verify Artifact
+      # ==========================================
+      - name: Verify Binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BINARY="build/termux_remote_client_arm64"
+
+          echo "========================================"
+          echo "Checking final artifact"
+          echo "========================================"
+
+          if [ ! -f "$BINARY" ]; then
+            echo "ERROR: Binary does not exist."
+            exit 1
+          fi
+
+          chmod +x "$BINARY"
+
+          echo "File:"
+          file "$BINARY"
+
+          echo "Size:"
+          ls -lh "$BINARY"
+
+          echo "Binary is ready."
+
+      # ==========================================
+      # Upload Artifact
+      # ==========================================
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-arm64
+          path: build/termux_remote_client_arm64
+          if-no-files-found: error
+
+      # ==========================================
+      # GitHub Release
+      # ==========================================
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: termux-arm64-${{ github.run_number }}
+          name: Termux ARM64 Build ${{ github.run_number }}
+          files: build/termux_remote_client_arm64
+          generate_release_notes: true
