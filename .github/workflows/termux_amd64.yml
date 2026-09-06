@@ -109,41 +109,41 @@ jobs:
                 --lto=yes \
                 --remove-output \
                 --output-dir=build_out \
-                --output-filename=trat_amd64 \
+                --output-filename=trat_arm64 \
                 main.py
 
               echo "===== Checking build result ====="
 
-              if [ ! -f "build_out/trat_amd64" ]; then
+              if [ ! -f "build_out/trat_arm64" ]; then
                 echo "ERROR: Binary was not created"
                 ls -lah build_out || true
                 exit 1
               fi
 
-              chmod +x build_out/trat_amd64
+              chmod +x build_out/trat_arm64
 
 
               echo "===== Cleaning binary ====="
 
 
-              strip build_out/trat_amd64 || true
+              strip build_out/trat_arm64 || true
 
               if command -v termux-elf-cleaner >/dev/null 2>&1; then
-                termux-elf-cleaner build_out/trat_amd64 || true
+                termux-elf-cleaner build_out/trat_arm64 || true
               fi
 
 
               echo "Binary information"
 
 
-              file build_out/trat_amd64
-              ls -lh build_out/trat_amd64
+              file build_out/trat_arm64
+              ls -lh build_out/trat_arm64
 
 
               echo "Copying binary"
 
 
-              cp build_out/trat_amd64 /workspace/build/
+              cp build_out/trat_arm64 /workspace/build/
 
               echo "BUILD SUCCESSFUL"
             '
@@ -153,19 +153,19 @@ jobs:
         run: |
           set -e
 
-          if [ ! -f "build/trat_amd64" ]; then
+          if [ ! -f "build/trat_arm64" ]; then
             echo "ERROR: Build artifact does not exist"
             exit 1
           fi
 
-          file build/trat_amd64
-          ls -lh build/trat_amd64
+          file build/trat_arm64
+          ls -lh build/trat_arm64
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: trat-arm64
-          path: build/trat_amd64
+          path: build/trat_arm64
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -174,5 +174,5 @@ jobs:
         with:
           tag_name: build-termux-arm64-${{ github.run_number }}
           name: Termux ARM64 Build ${{ github.run_number }}
-          files: build/trat_amd64
+          files: build/trat_arm64
           generate_release_notes: true
