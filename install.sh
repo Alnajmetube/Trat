@@ -1,4 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
+
+
 logo() {
     # الألوان (Colors)
     local C='\e[1;36m'  # سماوي (Cyan) للجزء العلوي والأساسي
@@ -24,7 +26,6 @@ logo() {
 }
 
 logo
-
 set -e
 
 # ==========================================
@@ -34,16 +35,94 @@ set -e
 APP_NAME="trat"
 INSTALL_DIR="$HOME/.trat"
 APP_PATH="$INSTALL_DIR/$APP_NAME"
+CONFIG_FILE="$INSTALL_DIR/.config.json"
 LOCK_FILE="$INSTALL_DIR/$APP_NAME.lock"
 BASHRC="$HOME/.bashrc"
 
-# ------------------------------------------
+DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/build-termux-arm64-5/trat_amd64"
+
+START_MARKER="# >>> TRAT SERVICE >>>"
+END_MARKER="# <<< TRAT SERVICE <<<"
+
+# ==========================================
+# Uninstall
+# ==========================================
+
+if [ "$1" = "--uninstall" ]; then
+
+    echo "[+] Uninstalling T.R.A.T..."
+
+    # --------------------------------------
+    # إيقاف الخدمة
+    # --------------------------------------
+
+    if [ -f "$APP_PATH" ]; then
+        echo "[+] Stopping T.R.A.T..."
+
+        pkill -f "$APP_PATH" 2>/dev/null || true
+
+        sleep 1
+    fi
+
+    # --------------------------------------
+    # إزالة تشغيل الخدمة من bashrc
+    # --------------------------------------
+
+    if [ -f "$BASHRC" ]; then
+        echo "[+] Removing T.R.A.T from ~/.bashrc..."
+
+        sed -i "/$START_MARKER/,/$END_MARKER/d" "$BASHRC"
+    fi
+
+    # --------------------------------------
+    # حذف الملفات
+    # --------------------------------------
+
+    echo "[+] Removing T.R.A.T files..."
+
+    rm -f "$APP_PATH"
+    rm -f "$CONFIG_FILE"
+    rm -f "$LOCK_FILE"
+
+    # --------------------------------------
+    # حذف مجلد .trat إذا أصبح فارغًا
+    # --------------------------------------
+
+    if [ -d "$INSTALL_DIR" ]; then
+        rmdir "$INSTALL_DIR" 2>/dev/null || true
+    fi
+
+    # --------------------------------------
+    # تحديث bashrc
+    # --------------------------------------
+
+    if [ -f "$BASHRC" ]; then
+        source "$BASHRC"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo " T.R.A.T uninstalled successfully"
+    echo "=========================================="
+    echo ""
+
+    exit 0
+fi
+
+# ==========================================
 # التحقق من المدخلات
-# ------------------------------------------
+# ==========================================
 
 if [ "$#" -ne 4 ] || [ "$1" != "--token" ] || [ "$3" != "--chat_id" ]; then
     echo "Usage:"
-    echo "  bash install.sh --token \"TOKEN\" --chat_id \"CHAT_ID\""
+    echo ""
+    echo "  Install:"
+    echo "    bash install.sh --token \"TOKEN\" --chat_id \"CHAT_ID\""
+    echo ""
+    echo "  Uninstall:"
+    echo "    bash install.sh --uninstall"
+    echo ""
+
     exit 1
 fi
 
@@ -55,26 +134,29 @@ if [ -z "$TOKEN" ] || [ -z "$CHAT_ID" ]; then
     exit 1
 fi
 
-# ------------------------------------------
+# ==========================================
 # التحقق من Termux
-# ------------------------------------------
+# ==========================================
 
 if [ ! -d "/data/data/com.termux" ]; then
     echo "Error: This installer is designed for Termux."
     exit 1
 fi
 
-echo "[+] Installing required packages..."
+echo "[+] Installing dependencies..."
 
-# ------------------------------------------
+# ==========================================
 # تثبيت المتطلبات
-# ------------------------------------------
+# ==========================================
 
 pkg update -y >/dev/null 2>&1 || true
+pkg install -y wget util-linux >/dev/null 2>&1
 
-pkg install -y wget curl util-linux >/dev/null 2>&1
+if ! command -v wget >/dev/null 2>&1; then
+    echo "Error: wget was not installed."
+    exit 1
+fi
 
-# flock موجود داخل util-linux في Termux
 if ! command -v flock >/dev/null 2>&1; then
     echo "Error: flock was not installed."
     exit 1
@@ -82,25 +164,18 @@ fi
 
 echo "[+] Dependencies installed."
 
-# ------------------------------------------
-# التحقق من الأداة الجديدة
-# ------------------------------------------
+# ==========================================
+# إنشاء مجلد التثبيت
+# ==========================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_APP="$SCRIPT_DIR/$APP_NAME"
+mkdir -p "$INSTALL_DIR"
 
-if [ ! -f "$SOURCE_APP" ]; then
-    echo "Error: $APP_NAME was not found next to install.sh"
-    echo "Expected:"
-    echo "  $SOURCE_APP"
-    exit 1
-fi
-
-# ------------------------------------------
-# إيقاف النسخة القديمة إن كانت تعمل
-# ------------------------------------------
+# ==========================================
+# إيقاف النسخة القديمة
+# ==========================================
 
 if [ -f "$APP_PATH" ]; then
+
     echo "[+] Stopping old instance..."
 
     pkill -f "$APP_PATH" 2>/dev/null || true
@@ -108,25 +183,34 @@ if [ -f "$APP_PATH" ]; then
     sleep 1
 fi
 
-# ------------------------------------------
-# إنشاء مجلد التثبيت
-# ------------------------------------------
+# ==========================================
+# تنزيل Binary
+# ==========================================
 
-mkdir -p "$INSTALL_DIR"
+echo "[+] Downloading $APP_NAME..."
 
-# ------------------------------------------
-# استبدال الأداة القديمة بالجديدة
-# ------------------------------------------
+wget -q --show-progress \
+    -O "$APP_PATH.tmp" \
+    "$DOWNLOAD_URL"
 
-echo "[+] Installing $APP_NAME..."
+if [ ! -s "$APP_PATH.tmp" ]; then
 
-cp -f "$SOURCE_APP" "$APP_PATH"
+    rm -f "$APP_PATH.tmp"
+
+    echo "Error: Failed to download $APP_NAME."
+
+    exit 1
+fi
+
+mv -f "$APP_PATH.tmp" "$APP_PATH"
 
 chmod +x "$APP_PATH"
 
-# ------------------------------------------
-# تنفيذ --install مرة واحدة
-# ------------------------------------------
+echo "[+] $APP_NAME downloaded successfully."
+
+# ==========================================
+# تشغيل --install مرة واحدة
+# ==========================================
 
 echo "[+] Running initial installation..."
 
@@ -137,25 +221,24 @@ echo "[+] Running initial installation..."
 
 echo "[+] Initial installation completed."
 
-# ------------------------------------------
-# إنشاء ملف flock
-# ------------------------------------------
+# ==========================================
+# إنشاء ملف Lock
+# ==========================================
 
 touch "$LOCK_FILE"
 
-# ------------------------------------------
-# إنشاء أمر التشغيل التلقائي
-# ------------------------------------------
+# ==========================================
+# تحديث bashrc
+# ==========================================
 
-START_MARKER="# >>> TRAT SERVICE >>>"
-END_MARKER="# <<< TRAT SERVICE <<<"
+echo "[+] Configuring T.R.A.T service..."
 
-# إزالة إعداد TRAT القديم بالكامل
+# حذف إعداد قديم
 if [ -f "$BASHRC" ]; then
     sed -i "/$START_MARKER/,/$END_MARKER/d" "$BASHRC"
 fi
 
-# إضافة الإعداد الجديد
+# إضافة الخدمة
 cat >> "$BASHRC" <<EOF
 
 $START_MARKER
@@ -166,27 +249,37 @@ $START_MARKER
 $END_MARKER
 EOF
 
-# ------------------------------------------
-# تشغيل الأداة الآن في الخلفية
-# ------------------------------------------
+echo "[+] Service added to ~/.bashrc."
 
-echo "[+] Starting $APP_NAME in background..."
+# ==========================================
+# تشغيل الخدمة الآن
+# ==========================================
 
-(
-    flock -n 9 || exit 0
-    nohup "$APP_PATH" >/dev/null 2>&1 &
-) 9>"$LOCK_FILE"
+echo "[+] Starting T.R.A.T in background..."
+
+source "$BASHRC"
+
+# ==========================================
+# النتيجة
+# ==========================================
 
 echo ""
 echo "=========================================="
 echo " T.R.A.T installed successfully"
 echo "=========================================="
 echo ""
-echo "Location:"
+echo "Binary:"
 echo "  $APP_PATH"
 echo ""
-echo "The service will start automatically"
-echo "when Termux starts."
+echo "Config:"
+echo "  $CONFIG_FILE"
 echo ""
-echo "No --install will be used from .bashrc."
+echo "Service:"
+echo "  ~/.bashrc"
 echo ""
+echo "T.R.A.T is running in background."
+echo ""
+echo "Uninstall:"
+echo "  bash install.sh --uninstall"
+echo "=========================================="
+
