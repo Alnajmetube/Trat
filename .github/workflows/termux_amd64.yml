@@ -51,21 +51,26 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/build"
 
-          chmod -R 777 "$GITHUB_WORKSPACE"
-
+          # NOTE: do not rely only on globally forcing 777 here; we will run the container as the host user.
+          # chmod -R 777 "$GITHUB_WORKSPACE"
 
           echo "========================================"
           echo "Starting ARM64 Termux container"
           echo "========================================"
 
+          # run container as host UID:GID so files created in /workspace are writable by runner
+          HOST_UID=$(id -u)
+          HOST_GID=$(id -g)
+
           docker run --rm \
             --platform linux/arm64 \
+            -u "$HOST_UID:$HOST_GID" \
             -v "$GITHUB_WORKSPACE:/workspace" \
+            -e HOST_UID="$HOST_UID" -e HOST_GID="$HOST_GID" \
             termux/termux-docker:aarch64 \
             bash -c '
 
               set -euo pipefail
-
 
               echo "========================================"
               echo "Termux ARM64 Environment"
@@ -79,11 +84,9 @@ jobs:
                 exit 1
               fi
 
-
               # ==========================================
               # Update packages
               # ==========================================
-
               echo "========================================"
               echo "Updating Termux packages"
               echo "========================================"
@@ -91,11 +94,9 @@ jobs:
               pkg update -y
               pkg upgrade -y
 
-
               # ==========================================
               # Install dependencies
               # ==========================================
-
               echo "========================================"
               echo "Installing build dependencies"
               echo "========================================"
@@ -112,11 +113,9 @@ jobs:
                 zstd \
                 file
 
-
               # ==========================================
               # Python
               # ==========================================
-
               echo "========================================"
               echo "Python information"
               echo "========================================"
@@ -124,11 +123,9 @@ jobs:
               python --version
               python -m pip --version
 
-
               # ==========================================
               # Prepare build directory
               # ==========================================
-
               echo "========================================"
               echo "Preparing source"
               echo "========================================"
@@ -145,15 +142,12 @@ jobs:
 
               cd "$BUILD_DIR"
 
-
               # ==========================================
               # Install Python dependencies
               # ==========================================
-
               echo "========================================"
               echo "Installing Python dependencies"
               echo "========================================"
-
 
               if [ -f requirements.txt ]; then
                 python -m pip install -r requirements.txt
@@ -161,11 +155,9 @@ jobs:
                 echo "No requirements.txt found."
               fi
 
-
               # ==========================================
               # Install Nuitka
               # ==========================================
-
               echo "========================================"
               echo "Installing Nuitka"
               echo "========================================"
@@ -174,11 +166,9 @@ jobs:
 
               python -m nuitka --version
 
-
               # ==========================================
               # Validate source
               # ==========================================
-
               echo "========================================"
               echo "Checking source"
               echo "========================================"
@@ -188,11 +178,9 @@ jobs:
                 exit 1
               fi
 
-
               # ==========================================
               # Build
               # ==========================================
-
               echo "========================================"
               echo "Compiling Trat with Nuitka"
               echo "========================================"
@@ -205,11 +193,9 @@ jobs:
                 --output-filename=Trat \
                 main.py
 
-
               # ==========================================
               # Verify binary
               # ==========================================
-
               echo "========================================"
               echo "Verifying binary"
               echo "========================================"
@@ -224,11 +210,9 @@ jobs:
 
               chmod +x "$BINARY"
 
-
               # ==========================================
               # Clean binary
               # ==========================================
-
               echo "========================================"
               echo "Cleaning binary"
               echo "========================================"
@@ -239,11 +223,9 @@ jobs:
                   termux-elf-cleaner "$BINARY" || true
               fi
 
-
               # ==========================================
               # Final information
               # ==========================================
-
               echo "========================================"
               echo "Final binary"
               echo "========================================"
@@ -251,19 +233,21 @@ jobs:
               file "$BINARY"
               ls -lh "$BINARY"
 
-
               # ==========================================
               # Export binary
               # ==========================================
-
               echo "========================================"
               echo "Exporting binary"
               echo "========================================"
 
               cp "$BINARY" /workspace/build/Trat
 
-              chmod +x /workspace/build/Trat
+              # Ensure correct ownership on the workspace file as a fallback (HOST_UID/HOST_GID passed from host)
+              if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
+                chown "$HOST_UID:$HOST_GID" /workspace/build/Trat || true
+              fi
 
+              chmod +x /workspace/build/Trat || true
 
               echo "========================================"
               echo "BUILD SUCCESSFUL"
@@ -272,7 +256,6 @@ jobs:
               echo "Output:"
               ls -lh /workspace/build/Trat
             '
-
 
       # ==========================================
       # Verify Artifact
@@ -293,7 +276,8 @@ jobs:
             exit 1
           fi
 
-          chmod +x "$BINARY"
+          # Try to set executable; do not fail the job if chmod is not permitted on this filesystem
+          chmod +x "$BINARY" || echo "Warning: chmod failed on $BINARY (continuing)."
 
           echo "File:"
           file "$BINARY"
@@ -302,7 +286,6 @@ jobs:
           ls -lh "$BINARY"
 
           echo "Binary is ready."
-
 
       # ==========================================
       # Upload Artifact
@@ -313,7 +296,6 @@ jobs:
           name: Trat-termux-arm64
           path: build/Trat
           if-no-files-found: error
-
 
       # ==========================================
       # GitHub Release
