@@ -1,4 +1,4 @@
-name: Build Trat Termux ARM64
+name: Build Termux ARM64 Binary
 
 on:
   push:
@@ -15,91 +15,50 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build Trat ARM64
+  build-termux:
+    name: Build Termux ARM64
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================================
-      # Checkout
-      # ==========================================
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # QEMU
-      # ==========================================
-      - name: Setup QEMU
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
-
-      # ==========================================
-      # Build
-      # ==========================================
-      - name: Build Trat Termux ARM64
+      - name: Set up Docer image
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          echo "========================================"
-          echo "Preparing build directory"
-          echo "========================================"
-
-          mkdir -p "$GITHUB_WORKSPACE/build"
-
-          chmod -R 777 "$GITHUB_WORKSPACE"
-
-
-          echo "========================================"
-          echo "Starting ARM64 Termux container"
-          echo "========================================"
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          sudo chmod -R 777 "${GITHUB_WORKSPACE}"
 
           docker run --rm \
             --platform linux/arm64 \
-            -v "$GITHUB_WORKSPACE:/workspace" \
+            --privileged \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
             termux/termux-docker:aarch64 \
             bash -c '
+              set -e
 
-              set -euo pipefail
+              echo "Termux ARM64 build environment"
 
-
-              echo "========================================"
-              echo "Termux ARM64 Environment"
-              echo "========================================"
-
-              echo "Architecture:"
+              echo "Checking architecture..."
               uname -m
 
               if [ "$(uname -m)" != "aarch64" ]; then
-                echo "ERROR: ARM64 environment was not detected."
+                echo "ERROR: Container is not running as aarch64"
                 exit 1
               fi
 
-
-              # ==========================================
-              # Update packages
-              # ==========================================
-
-              echo "========================================"
-              echo "Updating Termux packages"
-              echo "========================================"
+              echo "==== Updating Termux packages ===="
 
               pkg update -y
-              pkg upgrade -y
 
-
-              # ==========================================
-              # Install dependencies
-              # ==========================================
-
-              echo "========================================"
-              echo "Installing build dependencies"
-              echo "========================================"
-
+              echo "Installing build dependencies..."
               pkg install -y \
                 python \
                 clang \
@@ -112,217 +71,108 @@ jobs:
                 zstd \
                 file
 
-
-              # ==========================================
-              # Python
-              # ==========================================
-
-              echo "========================================"
-              echo "Python information"
-              echo "========================================"
+              echo "==== Checking Python ===="
 
               python --version
               python -m pip --version
 
-
-              # ==========================================
-              # Prepare build directory
-              # ==========================================
-
-              echo "========================================"
-              echo "Preparing source"
-              echo "========================================"
-
-              BUILD_DIR="$HOME/build"
-              OUTPUT_DIR="$BUILD_DIR/output"
-
-              rm -rf "$BUILD_DIR"
-
-              mkdir -p "$BUILD_DIR"
-              mkdir -p "$OUTPUT_DIR"
-
-              cp -r /workspace/. "$BUILD_DIR/"
-
-              cd "$BUILD_DIR"
+              echo "==== Installing Python dependencies ===="
 
 
-              # ==========================================
-              # Install Python dependencies
-              # ==========================================
-
-              echo "========================================"
-              echo "Installing Python dependencies"
-              echo "========================================"
-
-
-              if [ -f requirements.txt ]; then
-                python -m pip install -r requirements.txt
-              else
-                echo "No requirements.txt found."
+              if [ -f /workspace/client_requirements.txt ]; then
+                python -m pip install -r /workspace/requirements.txt
               fi
 
-
-              # ==========================================
-              # Install Nuitka
-              # ==========================================
-
-              echo "========================================"
-              echo "Installing Nuitka"
-              echo "========================================"
+              echo "==== Installing Nuitka ===="
 
               python -m pip install --upgrade Nuitka
-
               python -m nuitka --version
 
+              echo "==== Preparing source ===="
 
-              # ==========================================
-              # Validate source
-              # ==========================================
+              WORK_DIR="$HOME/work"
 
-              echo "========================================"
-              echo "Checking source"
-              echo "========================================"
+              rm -rf "$WORK_DIR"
+              mkdir -p "$WORK_DIR"
 
-              if [ ! -f main.py ]; then
-                echo "ERROR: main.py was not found."
-                exit 1
-              fi
+              cp -r /workspace/. "$WORK_DIR/"
 
+              cd "$WORK_DIR"
 
-              # ==========================================
-              # Build
-              # ==========================================
+              rm -rf build_out
+              mkdir -p build_out
 
-              echo "========================================"
-              echo "Compiling Trat with Nuitka"
-              echo "========================================"
+              echo "==== Building ARM64 binary ===="
 
               python -m nuitka \
                 --mode=onefile \
                 --lto=yes \
                 --remove-output \
-                --output-dir="$OUTPUT_DIR" \
-                --output-filename=Trat \
+                --output-dir=build_out \
+                --output-filename=trat_amd64 \
                 main.py
 
+              echo "===== Checking build result ====="
 
-              # ==========================================
-              # Verify binary
-              # ==========================================
-
-              echo "========================================"
-              echo "Verifying binary"
-              echo "========================================"
-
-              BINARY="$OUTPUT_DIR/Trat"
-
-              if [ ! -f "$BINARY" ]; then
-                echo "ERROR: Binary was not created."
-                ls -lah "$OUTPUT_DIR"
+              if [ ! -f "build_out/trat_amd64" ]; then
+                echo "ERROR: Binary was not created"
+                ls -lah build_out || true
                 exit 1
               fi
 
-              chmod +x "$BINARY"
+              chmod +x build_out/trat_amd64
 
 
-              # ==========================================
-              # Clean binary
-              # ==========================================
+              echo "===== Cleaning binary ====="
 
-              echo "========================================"
-              echo "Cleaning binary"
-              echo "========================================"
 
-              strip "$BINARY" || true
+              strip build_out/trat_amd64 || true
 
               if command -v termux-elf-cleaner >/dev/null 2>&1; then
-                  termux-elf-cleaner "$BINARY" || true
+                termux-elf-cleaner build_out/trat_amd64 || true
               fi
 
 
-              # ==========================================
-              # Final information
-              # ==========================================
-
-              echo "========================================"
-              echo "Final binary"
-              echo "========================================"
-
-              file "$BINARY"
-              ls -lh "$BINARY"
+              echo "Binary information"
 
 
-              # ==========================================
-              # Export binary
-              # ==========================================
-
-              echo "========================================"
-              echo "Exporting binary"
-              echo "========================================"
-
-              cp "$BINARY" /workspace/build/Trat
-
-              chmod +x /workspace/build/Trat
+              file build_out/trat_amd64
+              ls -lh build_out/trat_amd64
 
 
-              echo "========================================"
+              echo "Copying binary"
+
+
+              cp build_out/trat_amd64 /workspace/build/
+
               echo "BUILD SUCCESSFUL"
-              echo "========================================"
-
-              echo "Output:"
-              ls -lh /workspace/build/Trat
             '
 
-
-      # ==========================================
-      # Verify Artifact
-      # ==========================================
-      - name: Verify Binary
+      - name: Verify artifact
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          BINARY="build/Trat"
-
-          echo "========================================"
-          echo "Checking final artifact"
-          echo "========================================"
-
-          if [ ! -f "$BINARY" ]; then
-            echo "ERROR: Binary does not exist."
+          if [ ! -f "build/trat_amd64" ]; then
+            echo "ERROR: Build artifact does not exist"
             exit 1
           fi
 
-          chmod +x "$BINARY"
+          file build/trat_amd64
+          ls -lh build/trat_amd64
 
-          echo "File:"
-          file "$BINARY"
-
-          echo "Size:"
-          ls -lh "$BINARY"
-
-          echo "Binary is ready."
-
-
-      # ==========================================
-      # Upload Artifact
-      # ==========================================
-      - name: Upload Binary
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Trat-termux-arm64
-          path: build/Trat
+          name: trat-arm64
+          path: build/trat_amd64
           if-no-files-found: error
 
-
-      # ==========================================
-      # GitHub Release
-      # ==========================================
-      - name: Create Release
+      - name: Create GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Trat-termux-arm64-${{ github.run_number }}
-          name: Trat Termux ARM64 Build ${{ github.run_number }}
-          files: build/Trat
+          tag_name: build-termux-arm64-${{ github.run_number }}
+          name: Termux ARM64 Build ${{ github.run_number }}
+          files: build/trat_amd64
           generate_release_notes: true
