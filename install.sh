@@ -1,4 +1,3 @@
-```bash
 #!/data/data/com.termux/files/usr/bin/bash
 
 logo() {
@@ -22,7 +21,7 @@ logo() {
     echo -e "${D}      .${C}  ##         ${B}##  ${D}.${R}"
     echo -e "${D}         . . . . . . .${R}"
 }
-
+clear
 logo
 
 set -e
@@ -37,10 +36,18 @@ APP_PATH="$INSTALL_DIR/$APP_NAME"
 CONFIG_FILE="$INSTALL_DIR/.config.json"
 BASHRC="$HOME/.bashrc"
 
-DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/build-termux-arm64-9/trat_arm64"
-
 START_MARKER="# >>> TRAT SERVICE >>>"
 END_MARKER="# <<< TRAT SERVICE <<<"
+
+
+# ==========================================
+# التحقق من Termux
+# ==========================================
+
+if [ ! -d "/data/data/com.termux" ]; then
+    echo "Error: This installer is designed for Termux."
+    exit 1
+fi
 
 
 # ==========================================
@@ -138,30 +145,41 @@ fi
 
 
 # ==========================================
-# التحقق من Termux
-# ==========================================
-
-if [ ! -d "/data/data/com.termux" ]; then
-    echo "Error: This installer is designed for Termux."
-    exit 1
-fi
-
-
-# ==========================================
 # تثبيت المتطلبات
 # ==========================================
 
 echo "[+] Installing dependencies..."
 
 pkg update -y >/dev/null 2>&1 || true
-pkg install -y wget >/dev/null 2>&1
+pkg install -y curl >/dev/null 2>&1
 
-if ! command -v wget >/dev/null 2>&1; then
-    echo "Error: wget was not installed."
+if ! command -v curl >/dev/null 2>&1; then
+    echo "Error: curl was not installed."
     exit 1
 fi
 
 echo "[+] Dependencies installed."
+
+
+# ==========================================
+# الحصول على أحدث Build
+# ==========================================
+
+echo "[+] Checking latest T.R.A.T build..."
+
+LATEST_TAG=$(curl -fsSL \
+    "https://api.github.com/repos/Alnajmetube/Trat/releases/latest" \
+    | grep '"tag_name":' \
+    | sed -E 's/.*"([^"]+)".*/\1/')
+
+if [ -z "$LATEST_TAG" ]; then
+    echo "Error: Could not determine latest T.R.A.T build."
+    exit 1
+fi
+
+DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/${LATEST_TAG}/trat_arm64"
+
+echo "[+] Latest build: $LATEST_TAG"
 
 
 # ==========================================
@@ -177,8 +195,9 @@ mkdir -p "$INSTALL_DIR"
 
 echo "[+] Downloading $APP_NAME..."
 
-wget -q --show-progress \
-    -O "$APP_PATH.tmp" \
+curl -fL \
+    --progress-bar \
+    -o "$APP_PATH.tmp" \
     "$DOWNLOAD_URL"
 
 if [ ! -s "$APP_PATH.tmp" ]; then
@@ -186,7 +205,6 @@ if [ ! -s "$APP_PATH.tmp" ]; then
     rm -f "$APP_PATH.tmp"
 
     echo "Error: Failed to download $APP_NAME."
-
     exit 1
 fi
 
@@ -217,7 +235,6 @@ echo "[+] Initial installation completed."
 
 echo "[+] Configuring T.R.A.T service..."
 
-# حذف الإعداد القديم
 if [ -f "$BASHRC" ]; then
     sed -i "/$START_MARKER/,/$END_MARKER/d" "$BASHRC"
 fi
@@ -255,6 +272,9 @@ echo "=========================================="
 echo " T.R.A.T installed successfully"
 echo "=========================================="
 echo ""
+echo "Build:"
+echo "  $LATEST_TAG"
+echo ""
 echo "Binary:"
 echo "  $APP_PATH"
 echo ""
@@ -269,4 +289,3 @@ echo ""
 echo "Uninstall:"
 echo "  bash install.sh --uninstall"
 echo "=========================================="
-```
