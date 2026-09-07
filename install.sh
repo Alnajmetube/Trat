@@ -1,15 +1,13 @@
+```bash
 #!/data/data/com.termux/files/usr/bin/bash
 
-
 logo() {
-    # الألوان (Colors)
-    local C='\e[1;36m'  # سماوي (Cyan) للجزء العلوي والأساسي
-    local B='\e[1;34m'  # أزرق (Blue) لتفاصيل الأجنحة اليمنى
-    local Y='\e[1;33m'  # أصفر (Yellow) للنجوم اليسرى
-    local D='\e[1;30m'  # رمادي داكن (Dark Gray) للإطار
-    local R='\e[0m'     # إعادة تعيين (Reset)
+    local C='\e[1;36m'
+    local B='\e[1;34m'
+    local Y='\e[1;33m'
+    local D='\e[1;30m'
+    local R='\e[0m'
 
-    # طباعة الشعار مضغوطاً بدون مساحات شاسعة
     echo -e "${D}         . . . . . . .${R}"
     echo -e "${D}      .                 .${R}"
     echo -e "${D}     .${C}  ###############  ${D}.${R}"
@@ -26,6 +24,7 @@ logo() {
 }
 
 logo
+
 set -e
 
 # ==========================================
@@ -36,13 +35,13 @@ APP_NAME="trat"
 INSTALL_DIR="$HOME/.trat"
 APP_PATH="$INSTALL_DIR/$APP_NAME"
 CONFIG_FILE="$INSTALL_DIR/.config.json"
-LOCK_FILE="$INSTALL_DIR/$APP_NAME.lock"
 BASHRC="$HOME/.bashrc"
 
 DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/build-termux-arm64-9/trat_arm64"
 
 START_MARKER="# >>> TRAT SERVICE >>>"
 END_MARKER="# <<< TRAT SERVICE <<<"
+
 
 # ==========================================
 # Uninstall
@@ -53,7 +52,7 @@ if [ "$1" = "--uninstall" ]; then
     echo "[+] Uninstalling T.R.A.T..."
 
     # --------------------------------------
-    # إيقاف الخدمة
+    # إيقاف جميع نسخ T.R.A.T
     # --------------------------------------
 
     if [ -f "$APP_PATH" ]; then
@@ -65,7 +64,7 @@ if [ "$1" = "--uninstall" ]; then
     fi
 
     # --------------------------------------
-    # إزالة تشغيل الخدمة من bashrc
+    # إزالة الخدمة من bashrc
     # --------------------------------------
 
     if [ -f "$BASHRC" ]; then
@@ -82,7 +81,6 @@ if [ "$1" = "--uninstall" ]; then
 
     rm -f "$APP_PATH"
     rm -f "$CONFIG_FILE"
-    rm -f "$LOCK_FILE"
 
     # --------------------------------------
     # حذف مجلد .trat إذا أصبح فارغًا
@@ -109,15 +107,19 @@ if [ "$1" = "--uninstall" ]; then
     exit 0
 fi
 
+
 # ==========================================
 # التحقق من المدخلات
 # ==========================================
 
-if [ "$#" -ne 4 ] || [ "$1" != "--token" ] || [ "$3" != "--chat_id" ]; then
+if [ "$#" -ne 4 ] || \
+   [ "$1" != "--token" ] || \
+   [ "$3" != "--chat_id" ]; then
+
     echo "Usage:"
     echo ""
     echo "  Install:"
-    echo "    bash install.sh --token \"TOKEN\" --chat_id \"CHAT_ID\""
+    echo '    bash install.sh --token "TOKEN" --chat_id "CHAT_ID"'
     echo ""
     echo "  Uninstall:"
     echo "    bash install.sh --uninstall"
@@ -134,6 +136,7 @@ if [ -z "$TOKEN" ] || [ -z "$CHAT_ID" ]; then
     exit 1
 fi
 
+
 # ==========================================
 # التحقق من Termux
 # ==========================================
@@ -143,26 +146,23 @@ if [ ! -d "/data/data/com.termux" ]; then
     exit 1
 fi
 
-echo "[+] Installing dependencies..."
 
 # ==========================================
 # تثبيت المتطلبات
 # ==========================================
 
+echo "[+] Installing dependencies..."
+
 pkg update -y >/dev/null 2>&1 || true
-pkg install -y wget util-linux >/dev/null 2>&1
+pkg install -y wget >/dev/null 2>&1
 
 if ! command -v wget >/dev/null 2>&1; then
     echo "Error: wget was not installed."
     exit 1
 fi
 
-if ! command -v flock >/dev/null 2>&1; then
-    echo "Error: flock was not installed."
-    exit 1
-fi
-
 echo "[+] Dependencies installed."
+
 
 # ==========================================
 # إنشاء مجلد التثبيت
@@ -170,18 +170,6 @@ echo "[+] Dependencies installed."
 
 mkdir -p "$INSTALL_DIR"
 
-# ==========================================
-# إيقاف النسخة القديمة
-# ==========================================
-
-if [ -f "$APP_PATH" ]; then
-
-    echo "[+] Stopping old instance..."
-
-    pkill -f "$APP_PATH" 2>/dev/null || true
-
-    sleep 1
-fi
 
 # ==========================================
 # تنزيل Binary
@@ -208,6 +196,7 @@ chmod +x "$APP_PATH"
 
 echo "[+] $APP_NAME downloaded successfully."
 
+
 # ==========================================
 # تشغيل --install مرة واحدة
 # ==========================================
@@ -221,11 +210,6 @@ echo "[+] Running initial installation..."
 
 echo "[+] Initial installation completed."
 
-# ==========================================
-# إنشاء ملف Lock
-# ==========================================
-
-touch "$LOCK_FILE"
 
 # ==========================================
 # تحديث bashrc
@@ -233,23 +217,25 @@ touch "$LOCK_FILE"
 
 echo "[+] Configuring T.R.A.T service..."
 
-# حذف إعداد قديم
+# حذف الإعداد القديم
 if [ -f "$BASHRC" ]; then
     sed -i "/$START_MARKER/,/$END_MARKER/d" "$BASHRC"
 fi
 
+
+# ==========================================
 # إضافة الخدمة
+# ==========================================
+
 cat >> "$BASHRC" <<EOF
 
 $START_MARKER
-(
-    flock -n 9 || exit 0
-    nohup "$APP_PATH" >/dev/null 2>&1 &
-) 9>"$LOCK_FILE"
+nohup "$APP_PATH" >/dev/null 2>&1 &
 $END_MARKER
 EOF
 
 echo "[+] Service added to ~/.bashrc."
+
 
 # ==========================================
 # تشغيل الخدمة الآن
@@ -258,6 +244,7 @@ echo "[+] Service added to ~/.bashrc."
 echo "[+] Starting T.R.A.T in background..."
 
 source "$BASHRC"
+
 
 # ==========================================
 # النتيجة
@@ -282,4 +269,4 @@ echo ""
 echo "Uninstall:"
 echo "  bash install.sh --uninstall"
 echo "=========================================="
-
+```

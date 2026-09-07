@@ -6,7 +6,7 @@ import sys
 # telegarm bot impoets
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from telegram.error import NetworkError
+from telegram.error import NetworkError, Conflict
 
 CONFIG_FILE = ".config.json"
 TOKEN = None
@@ -23,6 +23,23 @@ def install(token: str, chat_id: str):
 
     print("✅ installation completed successfully.")
 
+async def error_handler(update, context):
+    error = context.error
+
+    if isinstance(error, Conflict):
+        print("❌ Telegram Conflict detected.")
+        print("⚠️ Another bot instance is already running.")
+        print("🛑 Program stopped.")
+
+        # إيقاف الـ updater
+        if context.application.updater:
+            await context.application.updater.stop()
+            print("✅ Updater stopped successfully.")
+
+        return
+
+    print(f"[Telegram] Error: {type(error).__name__}: {error}")
+
 def load_config():
     global TOKEN, CHAT_ID
 
@@ -35,7 +52,7 @@ def load_config():
         config = json.load(f)
 
     TOKEN = config["token"]
-    CHAT_ID = str(config["chat_id"])
+    CHAT_ID = int(config["chat_id"])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != CHAT_ID:
@@ -135,6 +152,7 @@ async def post_init(application):
         chat_id=CHAT_ID,
         text="🟢 الجهاز متصل"
     )
+    print("[Telegram] Bot started successfully.")
 
 def main():
     if "--install" in sys.argv:
@@ -167,8 +185,9 @@ def main():
     application.add_handler(
         CommandHandler("up", upload_command_handl)
     )
-    application.run_polling()
+    application.add_error_handler(error_handler)
 
+    application.run_polling()
 
 
 if __name__ == '__main__':
