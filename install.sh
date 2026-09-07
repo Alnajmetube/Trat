@@ -39,7 +39,7 @@ CONFIG_FILE="$INSTALL_DIR/.config.json"
 LOCK_FILE="$INSTALL_DIR/$APP_NAME.lock"
 BASHRC="$HOME/.bashrc"
 
-DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/build-termux-arm64-5/trat_amd64"
+DOWNLOAD_URL="https://github.com/Alnajmetube/Trat/releases/download/build-termux-arm64-9/trat_arm64"
 
 START_MARKER="# >>> TRAT SERVICE >>>"
 END_MARKER="# <<< TRAT SERVICE <<<"
